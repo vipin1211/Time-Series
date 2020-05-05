@@ -1,0 +1,178 @@
+---
+title: "Stock Market Analysis and Forecasting using Time Series Analysis"
+author: "Vipin"
+date: "17 March 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("caTools")
+library(timeSeries)
+library(tidyverse)
+library(fPortfolio)
+library(PerformanceAnalytics)
+library(quantmod)
+library(caTools)
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(PortfolioAnalytics)
+
+```
+
+```{r}
+library(tidyquant)
+#Load 20 years of stock data using 'GSPC'
+stock_data <- tq_get(c("^GSPC"), get = "stock.prices", from = "1999-03-01", to = "2019-03-01")
+
+#Calculating Monthly Returns from the raw data
+stock_returns_monthly <- stock_data %>% group_by("^GSPC") %>% tq_transmute(select = adjusted, mutate_fun = to.period, period = "months")
+
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(data = stock_returns_monthly, aes(x = date, y = adjusted )) + geom_line()
+
+```
+
+```{r}
+#Time Series Analysis
+stock_ts <- ts(stock_returns_monthly$adjusted, start = c(1999,3), freq = 12)
+
+#install.packages("ggfortify")
+library(ggfortify)
+autoplot(stock_ts, ts.color = "red",ts.linetype = 'dashed')
+
+#Splitting 90% data as training data
+stock_data_train <- ts(stock_ts, start=c(1999, 3), end=c(2017, 2), freq=12)
+test_data <- ts(stock_ts, start=c(2017, 3), end=c(2019, 3), freq=12)
+
+
+frequency(stock_ts)
+plot(stock_ts)
+plot(stock_data_train)
+plot(test_data)
+#abline(reg = lm(stock_ts ~ time(stock_ts)))
+```
+
+```{r}
+#Decomposing the time series to check Trends, Sesonality
+
+#Decomposing using the decompose()) function
+stock_decompose <- decompose(stock_data_train, "additive")
+class(stock_decompose)
+plot(as.ts(stock_decompose$trend))
+plot(as.ts(stock_decompose$seasonal))
+plot(as.ts(stock_decompose$random))
+plot(stock_decompose)
+
+#Decomposing using the STL function
+stock_decompose_stl <- stl(stock_data_train, s.window = "periodic")
+stock_decompose_stl_deseasonal <- seasadj(stock_decompose_stl)
+plot(stock_decompose_stl)
+
+```
+
+```{r}
+#Test for Stationarity
+
+#Box Ljung test
+Box.test(stock_ts, lag = 20, type = 'Ljung-Box')
+
+#Augmented Dickey-Fuller Test
+library(tseries)
+adf.test(stock_ts)
+
+```
+p-value is greater than 0.05 => The Null hypothesis that the data is not stationary is accepted.
+
+
+```{r}
+library(forecast)
+
+#ACF - AutoCorrelation Function
+
+acf(stock_data_train)
+ggAcf(stock_data_train)
+
+#PACF - Partial ArutoCorrelation Function
+
+pacf(stock_data_train)
+ggPacf(stock_data_train)
+
+
+#This shows that the data is not stationary as the mean and variance is time dependent
+```
+
+```{r}
+# Making the data stationary
+
+stock_diff <- diff(stock_data_train)
+plot(stock_diff)
+
+```
+The above plot makes the mean and variance independent of time, which makes it stationary.
+
+```{r}
+# Rechecking using the same tests
+
+#Box Ljung test
+
+Box.test(stock_diff, lag = 20, type = 'Ljung-Box')
+
+#Augment Dickey-Fuller test
+
+adf.test(stock_diff)
+
+```
+The p-value is less than 0.05, which means the Null hypothesis that the data is not stationary is rejected.
+
+Therefore, the data is stationary.
+
+```{r}
+#Rechecking the stationary data using ACF and PACF plots
+
+#ACF
+
+acf(stock_diff)
+ggAcf(stock_diff)
+
+#PACF
+
+pacf(stock_diff)
+ggPacf(stock_diff)
+
+```
+```{r}
+#manually implementing ARIMA forecast
+
+manual_arima <- Arima(stock_data_train, order = c(1,1,0), seasonal = list(order = c(2,1,1), period = 12))
+summary(manual_arima)
+plot(forecast(manual_arima))
+
+```
+
+
+```{r}
+#ARIMA Model
+auto.arima(stock_data_train)
+auto.arima(stock_diff)
+#Plotting the forecast of the ARIMA model for the training data, forecasted for a period of 2 years - 24 months.
+plot(forecast(auto.arima(stock_data_train, trace = TRUE), h = 24))
+
+plot(forecast(auto.arima(stock_data_train , D = 1, trace = TRUE), h = 24))
+
+#Plotting the forecast of the ARIMA model for the stationary data, forecasted for a period of 2 years - 24 months.
+plot(forecast(auto.arima(stock_diff , D = 1, trace = TRUE), h = 24))
+
+plot(forecast(auto.arima(stock_diff, trace = TRUE), h = 24))
+
+
+```
